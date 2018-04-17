@@ -17,16 +17,16 @@ struct TextureElement
 	 * \param resolution Resolution of image
 	 * \param pixels Raw pixel data of texture
 	 */
-	explicit TextureElement(std::string texture_name, glm::ivec2 resolution, std::vector<unsigned char> pixels);
+	explicit TextureElement(std::string texture_name, glm::vec2 resolution, std::vector<unsigned char> pixels);
 
 	friend bool operator<(const TextureElement& a, const TextureElement& b);
 
 	std::string textureName;
-	glm::ivec2 resolution;
+	glm::vec2 resolution;
 	std::vector<unsigned char> pixels;
 
 	// Set manually
-	glm::ivec2 position;
+	glm::vec2 position;
 };
 
 /*
