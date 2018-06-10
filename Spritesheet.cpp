@@ -210,7 +210,31 @@ bool Spritesheet::generate()
 	if (m_textures.empty())
 	{
 		m_errors.emplace_back("No textures found");
+	}
+	
+	if (!m_errors.empty())
+	{
 		return false;
+	}
+
+	const auto it = std::find_if(m_textures.begin(), m_textures.end(), [](const TextureElement& t)
+	{
+		return t.textureName == "default";
+	});
+
+	if (it == m_textures.end())
+	{
+		// Generate missing texture texture
+		std::vector<unsigned char> missingTextureData = {
+			255, 0, 255, 255, // magenta
+			0, 0, 0, 255,     // black
+			0, 0, 0, 255,     // black
+			255, 0, 255, 255  // magenta
+		};
+		const unsigned w = 2;
+		const auto h = w;
+
+		m_textures.emplace_back("default", glm::vec2(w, h), missingTextureData);
 	}
 
 	// pack and create spritesheet
@@ -240,7 +264,7 @@ glm::vec4 Spritesheet::getUv(const std::string& filename) const
 	{
 		// Replace this with your own error function, or don't
 		std::cout << "[ERROR] Could not find \"" + filename + "\" in spritesheet" << std::endl;
-		return glm::vec4(-1.0f);
+		return getUv("default");
 	}
 
 	const auto uv = it->second;
