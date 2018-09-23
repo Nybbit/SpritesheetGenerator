@@ -6,7 +6,9 @@ This code searches for PNGs in a specified directory and packs them together int
 
 This is meant to be modified for your own usage. (For example, generating an OpenGL texture for the spritesheet)
 
-Example code
+## Example
+
+**Code**
 ```cpp
 // Make the spritesheet
 Spritesheet mySheet = Spritesheet(
@@ -31,7 +33,7 @@ catch (const std::runtime_error& err)
 glm::vec4 uv = mySheet.getUv("my-texture-name");
 ```
 
-Example spritesheet
+**Spritesheet output**
 
 ![Example](https://i.imgur.com/W26KOIu.png)
 
