@@ -1,19 +1,19 @@
 #include "Spritesheet.h"
 #include <utility>
-#include <iostream>
-#include <boost/algorithm/string/predicate.hpp>
-#include "lodepng.h"
+#include <algorithm>
+
+#include "lodepng/lodepng.h"
 
 #define DEBUG_ENABLED false
 
 #if DEBUG_ENABLED
+#include <iostream>
 #define DEBUG_PRINT(s) std::clog << "[DEBUG] " << (s) << std::endl;
 #else
 #define DEBUG_PRINT(s)
 #endif
 
-TextureElement::TextureElement(std::string texture_name, const glm::vec2 resolution, std::vector<unsigned char> pixels) :
-	textureName(std::move(texture_name)), resolution(resolution), pixels(std::move(pixels))
+TextureElement::TextureElement(std::string texture_name, const glm::vec2 resolution, std::vector<unsigned char> pixels) : textureName(std::move(texture_name)), resolution(resolution), pixels(std::move(pixels))
 {
 }
 
@@ -30,7 +30,7 @@ Node::FitTypeEnum Node::fits(const glm::ivec2 rect_dims) const
 	return DOES_NOT_FIT;
 }
 
-Node* Node::insert(TextureElement& tex)
+Node *Node::insert(TextureElement &tex)
 {
 	// if not a leaf
 	if (children[0] != nullptr && children[1] != nullptr)
@@ -48,7 +48,10 @@ Node* Node::insert(TextureElement& tex)
 	else // if leaf
 	{
 		// if there's already a texture here
-		if (texture != nullptr) { return nullptr; }
+		if (texture != nullptr)
+		{
+			return nullptr;
+		}
 
 		const auto fitType = fits(tex.resolution);
 
@@ -173,62 +176,48 @@ Node* Node::insert(TextureElement& tex)
 	}
 }
 
-Spritesheet::Spritesheet(const bool search_sub_directories, const SpritesheetTextureNameStorageEnum spritesheet_texture_name_storage, const bool use_file_extensions) :
-	m_directory(""), m_searchSubdirs(search_sub_directories), m_spritesheetTextureNameStorage(spritesheet_texture_name_storage), m_useExtensions(use_file_extensions)
+Spritesheet::Spritesheet(const bool search_sub_directories, const SpritesheetTextureNameStorageEnum spritesheet_texture_name_storage, const bool use_file_extensions) : m_directory(""), m_searchSubdirs(search_sub_directories), m_spritesheetTextureNameStorage(spritesheet_texture_name_storage), m_useExtensions(use_file_extensions)
 {
 }
 
-Spritesheet::Spritesheet(std::string directory, const bool search_sub_directories, const SpritesheetTextureNameStorageEnum spritesheet_texture_name_storage, const bool use_file_extensions) :
-	m_directory(std::move(directory)), m_searchSubdirs(search_sub_directories), m_spritesheetTextureNameStorage(spritesheet_texture_name_storage), m_useExtensions(use_file_extensions)
+Spritesheet::Spritesheet(std::string directory, const bool search_sub_directories, const SpritesheetTextureNameStorageEnum spritesheet_texture_name_storage, const bool use_file_extensions) : m_directory(std::move(directory)), m_searchSubdirs(search_sub_directories), m_spritesheetTextureNameStorage(spritesheet_texture_name_storage), m_useExtensions(use_file_extensions)
 {
 }
 
-bool Spritesheet::generate()
+void Spritesheet::generate()
 {
 	// load images
 	if (m_searchSubdirs)
 	{
-		for (const auto& p : boost::filesystem::recursive_directory_iterator(m_directory))
+		for (const auto &p : std::experimental::filesystem::recursive_directory_iterator(m_directory))
 		{
-			if (!addTexture(p))
-			{
-				return false;
-			}
+			addTexture(p);
 		}
 	}
 	else
 	{
-		for (const auto& p : boost::filesystem::directory_iterator(m_directory))
+		for (const auto &p : std::experimental::filesystem::directory_iterator(m_directory))
 		{
-			if (!addTexture(p))
-			{
-				return false;
-			}
+			addTexture(p);
 		}
 	}
 
 	if (m_textures.empty())
 	{
-		m_errors.emplace_back("No textures found");
-	}
-	
-	if (!m_errors.empty())
-	{
-		return false;
+		throw std::runtime_error("No textures found");
 	}
 
-	const auto it = std::find_if(m_textures.begin(), m_textures.end(), [](const TextureElement& t)
-	{
+	const auto it = std::find_if(m_textures.begin(), m_textures.end(), [](const TextureElement &t) {
 		return t.textureName == "default";
 	});
 
 	if (it == m_textures.end())
 	{
-		// Generate missing texture texture
+		// Generate "missing texture" texture
 		std::vector<unsigned char> missingTextureData = {
 			255, 0, 255, 255, // magenta
-			0, 0, 0, 255,     // black
-			0, 0, 0, 255,     // black
+			0, 0, 0, 255,	 // black
+			0, 0, 0, 255,	 // black
 			255, 0, 255, 255  // magenta
 		};
 		const unsigned w = 2;
@@ -237,34 +226,17 @@ bool Spritesheet::generate()
 		m_textures.emplace_back("default", glm::vec2(w, h), missingTextureData);
 	}
 
-	// pack and create spritesheet
-	return packTextures();
+	// Pack textures together and fill vector with pixel data
+	packTextures();
 }
 
-std::string Spritesheet::getErrors() const
-{
-	// If there are no errors, return "No errors"
-	if (m_errors.empty()) { return "No errors"; }
-
-	// Put all errors nicely into a string
-	std::string errorList;
-	for (unsigned i = 0; i < m_errors.size(); i++)
-	{
-		errorList += "[ERROR]: " + m_errors[i];
-		if (i + 1 < m_errors.size()) { errorList += '\n'; }
-	}
-	return errorList;
-}
-
-glm::vec4 Spritesheet::getUv(const std::string& filename) const
+glm::vec4 Spritesheet::getUv(const std::string &filename) const
 {
 	const auto it = m_elements.find(filename);
 
 	if (it == m_elements.end())
 	{
-		// Replace this with your own error function, or don't
-		std::cout << "[ERROR] Could not find \"" + filename + "\" in spritesheet" << std::endl;
-		return getUv("default");
+		throw std::runtime_error("Could not find \"" + filename + "\" in spritesheet");
 	}
 
 	const auto uv = it->second;
@@ -272,9 +244,9 @@ glm::vec4 Spritesheet::getUv(const std::string& filename) const
 	return glm::vec4(uv.x, 1.0f - uv.y - uv.w, uv.z, uv.w);
 }
 
-bool Spritesheet::addTexture(const boost::filesystem::directory_entry& p)
+void Spritesheet::addTexture(const std::experimental::filesystem::directory_entry &p)
 {
-	if (!boost::filesystem::is_directory(p.path()) && boost::algorithm::ends_with(p.path().string(), ".png"))
+	if (!std::experimental::filesystem::is_directory(p.path()) && p.path().string().substr(p.path().string().length() - 4, 4) == ".png")
 	{
 		DEBUG_PRINT("Loading \"" + p.path().string() + "\"");
 
@@ -286,8 +258,7 @@ bool Spritesheet::addTexture(const boost::filesystem::directory_entry& p)
 		const auto err = lodepng::decode(out, w, h, p.path().string());
 		if (err != 0)
 		{
-			m_errors.push_back("Error occured during LodePNG decode: " + std::to_string(err));
-			return false;
+			throw std::runtime_error("Error occured during LodePNG decode: " + std::string(lodepng_error_text(err)));
 		}
 
 		std::string textureName;
@@ -313,11 +284,9 @@ bool Spritesheet::addTexture(const boost::filesystem::directory_entry& p)
 
 		m_textures.emplace_back(textureName, glm::vec2(w, h), out);
 	}
-
-	return true;
 }
 
-bool Spritesheet::packTextures()
+void Spritesheet::packTextures()
 {
 	// Sort from longest sides to shortest sides (image name is secondary)
 	std::sort(m_textures.begin(), m_textures.end());
@@ -327,7 +296,7 @@ bool Spritesheet::packTextures()
 	m_root->rectangle = glm::ivec4(0, 0, m_spritesheetResolution);
 
 	// Pack textures into sheet
-	for (auto& t : m_textures)
+	for (auto &t : m_textures)
 	{
 		DEBUG_PRINT("Packing \"" + t.textureName + "\"" + " <" + std::to_string(t.resolution.x) + ", " + std::to_string(t.resolution.y) + ">");
 
@@ -350,12 +319,13 @@ bool Spritesheet::packTextures()
 
 			auto grewDown = false;
 
-			if (shouldGrowDown) // grow down
+			// Figure out which way to grow
+			if (shouldGrowDown)
 			{
 				m_spritesheetResolution.y += t.resolution.y;
 				grewDown = true;
 			}
-			else if (shouldGrowRight) // grow right
+			else if (shouldGrowRight)
 			{
 				m_spritesheetResolution.x += t.resolution.x;
 			}
@@ -370,8 +340,7 @@ bool Spritesheet::packTextures()
 			}
 			else
 			{
-				m_errors.emplace_back("Couldn't grow spritesheet (this shouldn't happen)");
-				return false;
+				throw std::runtime_error("Could not grow spritesheet (this shouldn't happen)");
 			}
 
 			auto newRoot = std::make_unique<Node>();
@@ -382,7 +351,7 @@ bool Spritesheet::packTextures()
 			// make other child
 			newRoot->children[1] = std::make_unique<Node>();
 
-			// grow down
+			// Modify rectanges so that they're correct
 			if (grewDown)
 			{
 				newRoot->children[1]->rectangle = glm::ivec4(0, newRoot->children[0]->rectangle.w, newRoot->children[0]->rectangle.z, t.resolution.y);
@@ -394,9 +363,8 @@ bool Spritesheet::packTextures()
 
 			m_root = std::move(newRoot); // make newRoot m_root
 
-			const auto node = m_root->insert(t); // now image can be inserted successfully
-
-			// assign
+			// now image can be inserted into node successfully
+			const auto node = m_root->insert(t);
 			if (node != nullptr)
 			{
 				t.position = glm::vec2(node->rectangle.x, node->rectangle.y);
@@ -404,10 +372,8 @@ bool Spritesheet::packTextures()
 			}
 			else
 			{
-				m_errors.emplace_back("Couldn't place image in spritesheet (this shouldn't happen)");
-				return false;
+				throw std::runtime_error("Could not place image in spritesheet (this shouldn't happen");
 			}
-
 		}
 	}
 
@@ -415,49 +381,48 @@ bool Spritesheet::packTextures()
 	const auto w = m_spritesheetResolution.x;
 	const auto h = m_spritesheetResolution.y;
 
-	std::vector<unsigned char> finalImagePixels;
-	finalImagePixels.resize(w * h * 4); // 4 because rgba
+	m_pixels.resize(w * h * 4); // each pixels is 4 bytes (rgba)
 
-	for (auto& t : m_textures)
+	for (auto &t : m_textures)
 	{
 		DEBUG_PRINT("Adding \"" + t.textureName + "\" to spritesheet");
 
-		// texture position to pixel index
-		auto row = 0; // x * 4
-		auto col = 0; // y
+		auto col = 0; // x * 4
+		auto row = 0; // y
 
 		for (unsigned i = 0; i < t.pixels.size(); i++)
 		{
-			const auto pixelIndex = (t.position.x * 4 + row) + (t.position.y + col) * (w * 4);
+			// texture position to pixel index
+			const auto pixelIndex = (t.position.x * 4 + col) + (t.position.y + row) * (w * 4);
 
-			finalImagePixels[pixelIndex] = t.pixels[i];
+			m_pixels[pixelIndex] = t.pixels[i];
 
-			row++;
+			col++;
 
-			if (row == t.resolution.x * 4)
+			if (col == t.resolution.x * 4)
 			{
-				row = 0;
-				col++;
+				col = 0;
+				row++;
 			}
 		}
 
+		// Emplace with normalized position and width
 		m_elements.emplace(t.textureName, glm::vec4(t.position, t.resolution) / glm::vec4(w, h, w, h));
 	}
-
-	DEBUG_PRINT("Creating spritesheet");
-
-	// Feel free to change the output or just load it into a texture or something
-	const auto err = lodepng::encode("final.png", finalImagePixels, w, h);
-	if (err != 0)
-	{
-		m_errors.push_back("Error occured during LodePNG encode: " + std::to_string(err));
-		return false;
-	}
-
-	return true;
 }
 
-bool operator<(const TextureElement& a, const TextureElement& b)
+void Spritesheet::exportSpritesheet(const std::string &filename) const
+{
+	// It is recommended that you change this
+	DEBUG_PRINT("Creating spritesheet");
+	const auto err = lodepng::encode(filename, m_pixels, m_spritesheetResolution.x, m_spritesheetResolution.y);
+	if (err != 0)
+	{
+		throw std::runtime_error("Error occured during LodePNG encode: " + std::string(lodepng_error_text(err)));
+	}
+}
+
+bool operator<(const TextureElement &a, const TextureElement &b)
 {
 	const auto aSize = std::max(a.resolution.x, a.resolution.y);
 	const auto bSize = std::max(b.resolution.x, b.resolution.y);

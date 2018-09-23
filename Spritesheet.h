@@ -5,8 +5,8 @@
 #include <string>
 #include <vector>
 #include <map>
+#include <experimental/filesystem>
 
-#include <boost/filesystem.hpp>
 #include <glm/glm.hpp>
 
 struct TextureElement
@@ -101,43 +101,45 @@ public:
 
 	/**
 	 * \brief Generates a spritesheet from all PNGs in directory
-	 * \return If spritesheet was generated successfully
 	 */
-	bool generate();
+	void generate();
 
 	/**
-	 * \brief Get a formatted string with a list of errors
-	 * \return Formatted string with a list of errors
-	 */
-	std::string getErrors() const;
-
-	/**
-	 * \brief Get the UV of a texture by filename
+	 * \brief Get the UV of a texture by filename in the format (x, 1.0f - y, width, height) normalized [0-1]
 	 * \param filename Name of texture to get
 	 * \return uv
 	 */
 	glm::vec4 getUv(const std::string& filename) const;
+
+	/**
+	 * \brief Exports the spritesheet's image data to a file in the PNG format
+	 */
+	void exportSpritesheet(const std::string& filename) const;
 private:
 	/**
 	 * \brief Adds a png to the spritesheet
 	 * \param p Directory entry of png to add to spritesheet
 	 */
-	bool addTexture(const boost::filesystem::directory_entry& p);
+	void addTexture(const std::experimental::filesystem::directory_entry& p);
 
 	/**
 	 * \brief Packs textures together and creates spritesheet
 	 */
-	bool packTextures();
+	void packTextures();
 
 	std::string m_directory;
+
 	bool m_searchSubdirs;
+
 	SpritesheetTextureNameStorageEnum m_spritesheetTextureNameStorage;
+
 	bool m_useExtensions;
-	std::vector<std::string> m_errors;
 
 	std::vector<TextureElement> m_textures;
 
 	std::map<std::string, glm::vec4> m_elements;
+
+	std::vector<unsigned char> m_pixels;
 
 	glm::ivec2 m_spritesheetResolution;
 
