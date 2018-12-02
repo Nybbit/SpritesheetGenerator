@@ -13,7 +13,7 @@
 #define DEBUG_PRINT(s)
 #endif
 
-TextureElement::TextureElement(std::string texture_name, const glm::vec2 resolution, std::vector<unsigned char> pixels) : textureName(std::move(texture_name)), resolution(resolution), pixels(std::move(pixels))
+TextureElement::TextureElement(std::string texture_name, const glm::ivec2 resolution, std::vector<unsigned char> pixels) : textureName(std::move(texture_name)), resolution(resolution), pixels(std::move(pixels))
 {
 }
 
@@ -223,7 +223,7 @@ void Spritesheet::generate()
 		const unsigned w = 2;
 		const auto h = w;
 
-		m_textures.emplace_back("default", glm::vec2(w, h), missingTextureData);
+		m_textures.emplace_back("default", glm::ivec2(w, h), missingTextureData);
 	}
 
 	// Pack textures together and fill vector with pixel data
@@ -282,7 +282,7 @@ void Spritesheet::addTexture(const std::experimental::filesystem::directory_entr
 			break;
 		}
 
-		m_textures.emplace_back(textureName, glm::vec2(w, h), out);
+		m_textures.emplace_back(textureName, glm::ivec2(w, h), out);
 	}
 }
 
@@ -303,7 +303,7 @@ void Spritesheet::packTextures()
 		const auto texNode = m_root->insert(t);
 		if (texNode != nullptr)
 		{
-			t.position = glm::vec2(texNode->rectangle.x, texNode->rectangle.y);
+			t.position = glm::ivec2(texNode->rectangle.x, texNode->rectangle.y);
 			texNode->texture = &t;
 		}
 		else
@@ -367,7 +367,7 @@ void Spritesheet::packTextures()
 			const auto node = m_root->insert(t);
 			if (node != nullptr)
 			{
-				t.position = glm::vec2(node->rectangle.x, node->rectangle.y);
+				t.position = glm::ivec2(node->rectangle.x, node->rectangle.y);
 				node->texture = &t;
 			}
 			else
