@@ -1,28 +1,25 @@
 #include "../Spritesheet.h"
-#include <iostream>
 
 int main()
 {
-	Spritesheet sheet = Spritesheet("bin/textures", true, SpritesheetTextureNameStorageEnum::FILENAME, false);
+	/*
+	 * Generate a spritesheet from textures with the
+	 * extensions PNG, JPEG, and BMP in the
+	 * "texture" directory
+	 */
+	auto sheet = Spritesheet("bin/textures", PNG | JPEG | BMP);
+	sheet.exportSpritesheet("spritesheetData"); // Export the spritesheet to folder 'spritesheetData' for easy import later
+	sheet.getUv("subfolder/a"); // Get texture 'bin/textures/subfolder/a.png'
 
-	std::cout << "Generating spritesheet" << std::endl;
-
-	try
-	{
-		sheet.generate();
-		sheet.exportSpritesheet("out.png");
-	}
-	catch (const std::runtime_error &err)
-	{
-		std::cout << "[ERROR] " << err.what() << std::endl;
-		return 1;
-	}
-
-	std::cout << "Spritesheet generated" << std::endl;
-
-	const auto uv = sheet.getUv("c");
-
-	std::cout << uv.x << ", " << uv.y << ", " << uv.z << ", " << uv.w << std::endl;
-
+	// Create an ungenerated spritesheet for import
+	auto sheet2 = Spritesheet();
+	/*
+	 * Import spritesheet from folder 'spritesheetData'
+	 * Note: you don't need the original images if you're importing,
+	 * you only need image.png and data.dat (which are generated
+	 * by exportSpritesheet())
+	 */
+	sheet2.importSpritesheet("spritesheetData");
+	sheet.getUv("subfolder/a"); // Get texture
 	return 0;
 }

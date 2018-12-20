@@ -1,59 +1,61 @@
 #include "Spritesheet.h"
-#include <utility>
+
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb_image.h>
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include <stb_image_write.h>
+
 #include <algorithm>
-
-#include "lodepng/lodepng.h"
-
-#define DEBUG_ENABLED false
-
-#if DEBUG_ENABLED
+#include <fstream>
 #include <iostream>
-#define DEBUG_PRINT(s) std::clog << "[DEBUG] " << (s) << std::endl;
-#else
-#define DEBUG_PRINT(s)
+
+#ifndef LOG_VERBOSE
+#define LOG_VERBOSE std::cout << "[VERBOSE] "
+#endif
+#ifndef LOG_INFO
+#define LOG_INFO std::cout << "[INFO] "
+#endif
+#ifndef LOG_WARN
+#define LOG_WARN std::cerr << "[WARN] "
 #endif
 
-TextureElement::TextureElement(std::string texture_name, const glm::ivec2 resolution, std::vector<unsigned char> pixels) : textureName(std::move(texture_name)), resolution(resolution), pixels(std::move(pixels))
+Node::FitTypeEnum Node::fits(const glm::ivec2 dimensions) const
 {
-}
-
-Node::FitTypeEnum Node::fits(const glm::ivec2 rect_dims) const
-{
-	if (rect_dims.x == rectangle.z && rect_dims.y == rectangle.w)
+	if (dimensions.x == rectangle.z && dimensions.y == rectangle.w)
 	{
 		return PERFECT_FIT;
 	}
-	if (rect_dims.x <= rectangle.z && rect_dims.y <= rectangle.w)
+	if (dimensions.x <= rectangle.z && dimensions.y <= rectangle.w)
 	{
 		return EXTRA_SPACE;
 	}
 	return DOES_NOT_FIT;
 }
 
-Node *Node::insert(TextureElement &tex)
+Node* Node::insert(TextureData& data)
 {
 	// if not a leaf
 	if (children[0] != nullptr && children[1] != nullptr)
 	{
 		// try inserting into first child
-		const auto newNode = children[0]->insert(tex);
+		const auto newNode = children[0]->insert(data);
 		if (newNode != nullptr)
 		{
 			return newNode;
 		}
 
 		// otherwise insert into second child
-		return children[1]->insert(tex);
+		return children[1]->insert(data);
 	}
 	else // if leaf
 	{
 		// if there's already a texture here
-		if (texture != nullptr)
+		if (textureData != nullptr)
 		{
 			return nullptr;
 		}
 
-		const auto fitType = fits(tex.resolution);
+		const auto fitType = fits(data.dimensions);
 
 		// if too small
 		if (fitType == DOES_NOT_FIT)
@@ -74,92 +76,13 @@ Node *Node::insert(TextureElement &tex)
 		this->children[1] = std::make_unique<Node>();
 
 		// decide which way to split
-		const auto dw = rectangle.z - tex.resolution.x; // delta width
-		const auto dh = rectangle.w - tex.resolution.y; // delta height
-
-		/*
-		 *    ASCII PICTURE OF WHAT'S GOING ON HERE
-		 *
-		 *    Parent node rect
-		 *     ____________________
-		 *    |                    |
-		 *    |                    |
-		 *    |                    |
-		 *    |        :)          |
-		 *    |                    |
-		 *    |                    |
-		 *    |                    |
-		 *    |____________________|
-		 *
-		 *
-		 *
-		 *    At this point in the code, the texture that we're trying to put in this rectangle does not fit perfectly
-		 *    and there is space left over.
-		 *    Example texture that we're putting in the parent node's rect
-		 *
-		 *     ____________________
-		 *    |        |           |
-		 *    |  Tex   |           |
-		 *    |  Rect  |           |
-		 *    |        |           |
-		 *    |________|           |
-		 *    |                    |
-		 *    |  Parent Node Rect  |
-		 *    |____________________|
-		 *
-		 *
-		 *    If the difference in width is greater than the difference in height, then split the parent node's rectangle
-		 *    into two smaller rectangles. One of these rectangles will have the same width as the texture.
-		 *    These two rectangles correspond to the parent node's two children.
-		 *
-		 *     ____________________
-		 *    |        :           |
-		 *    |        :           |
-		 *    |        :           |
-		 *    | child1 :   child2  |
-		 *    |        :           |
-		 *    |        :           |
-		 *    |        :           |
-		 *    |________:___________|
-		 *       ^
-		 *       Same width as texture
-		 *
-		 *
-		 *
-		 *    Texture is then inserted into child1
-		 *
-		 *    child1's rectangle
-		 *     ________
-		 *    |        |
-		 *    |        |
-		 *    |        |
-		 *    |        |
-		 *    |        |
-		 *    |        |
-		 *    |        |
-		 *    |________|
-		 *
-		 *    Since the texture doesn't perfectly fit, split the rectangle again and make two child nodes
-		 *    One of these node's rectangles will PERFECTLY fit the texture in it since now the difference
-		 *    in height is greater than the difference in width (0, due to previous step).
-		 *    The other node is space for a possible other texture
-		 *
-		 *     ________
-		 *    |        |
-		 *    |        |   <--- Texture now takes up this rectangle
-		 *    |  Tex   |
-		 *    |        |
-		 *    |________|
-		 *    |        |
-		 *    |        |   <--- Free for another texture
-		 *    |________|
-		 *
-		 */
+		const auto dw = rectangle.z - data.dimensions.x; // delta width
+		const auto dh = rectangle.w - data.dimensions.y; // delta height
 
 		if (dw > dh)
 		{
 			// make rect for tex to fit into
-			children[0]->rectangle = glm::ivec4(rectangle.x, rectangle.y, tex.resolution.x, rectangle.w);
+			children[0]->rectangle = glm::ivec4(rectangle.x, rectangle.y, data.dimensions.x, rectangle.w);
 
 			// make rect that a different tex could possibly go into
 			children[1]->rectangle = glm::ivec4(rectangle.x + rectangle.z - dw, rectangle.y, dw, rectangle.w);
@@ -167,176 +90,235 @@ Node *Node::insert(TextureElement &tex)
 		else
 		{
 			// same thing but with height instead of width
-			children[0]->rectangle = glm::ivec4(rectangle.x, rectangle.y, rectangle.z, tex.resolution.y);
+			children[0]->rectangle = glm::ivec4(rectangle.x, rectangle.y, rectangle.z, data.dimensions.y);
 			children[1]->rectangle = glm::ivec4(rectangle.x, rectangle.y + rectangle.w - dh, rectangle.z, dh);
 		}
 
 		// put tex in child1
-		return this->children[0]->insert(tex);
+		return this->children[0]->insert(data);
 	}
 }
 
-Spritesheet::Spritesheet(const bool search_sub_directories, const SpritesheetTextureNameStorageEnum spritesheet_texture_name_storage, const bool use_file_extensions) : m_directory(""), m_searchSubdirs(search_sub_directories), m_spritesheetTextureNameStorage(spritesheet_texture_name_storage), m_useExtensions(use_file_extensions)
+Spritesheet::Spritesheet()
+	: m_imageTypeFlags(0)
+{}
+
+Spritesheet::Spritesheet(const std::string& directory, const unsigned image_type_flags)
+	: m_directory(directory), m_imageTypeFlags(image_type_flags)
 {
+	generate();
+	m_initialized = true;
 }
 
-Spritesheet::Spritesheet(std::string directory, const bool search_sub_directories, const SpritesheetTextureNameStorageEnum spritesheet_texture_name_storage, const bool use_file_extensions) : m_directory(std::move(directory)), m_searchSubdirs(search_sub_directories), m_spritesheetTextureNameStorage(spritesheet_texture_name_storage), m_useExtensions(use_file_extensions)
+glm::vec4 Spritesheet::getUv(const std::string& texture_name)
 {
+	if (!m_initialized)
+	{
+		LOG_WARN << "Spritesheet has not been initialized, could not find texture '" << texture_name << "'" << std::endl;
+		return glm::vec4(0);
+	}
+	const auto it = m_elements.find(texture_name);
+	if (it == m_elements.end())
+	{
+		LOG_WARN << "'" << texture_name << "' was not found in spritesheet" << std::endl;
+		return glm::vec4(0);
+	}
+	return it->second;
+}
+
+void Spritesheet::exportSpritesheet(const std::string& directory)
+{
+	LOG_VERBOSE << "Exporting spritesheet" << std::endl;
+
+	std::experimental::filesystem::create_directory(directory);
+	std::ofstream out(directory + "/data.dat");
+	for (auto& e : m_elements)
+	{
+		out << e.first << ";";
+		for (auto i = 0; i < 4; i++)
+		{
+			out << e.second[i] << ";";
+		}
+		out << "\n";
+	}
+	out.close();
+
+	// Export png
+	if (stbi_write_png((directory + std::string("/image.png")).c_str(),
+		m_spritesheetDimensions.x, m_spritesheetDimensions.y, 4,
+		m_pixels.data(), m_spritesheetDimensions.x * 4))
+	{
+		LOG_VERBOSE << "Successfully exported spritesheet" << std::endl;
+	}
+	else
+	{
+		LOG_INFO << "Failed to export spritesheet from '" << directory << "/'" << std::endl;
+	}
+}
+
+void Spritesheet::importSpritesheet(const std::string& directory)
+{
+	LOG_VERBOSE << "Importing spritesheet from '" << directory << "/'" << std::endl;
+	{
+		std::ifstream image(directory + "/image.png", std::ios::in | std::ios::binary);
+		if (!image.good())
+		{
+			LOG_WARN << "Unable to load image.png" << std::endl;
+			return;
+		}
+		m_pixels = std::vector<uint8_t>(std::istream_iterator<char>(image), std::istream_iterator<char>());
+	}
+
+	std::string line;
+	std::ifstream data(directory + "/data.dat");
+	if (!data.good())
+	{
+		LOG_WARN << "Unable to load data.bat" << std::endl;
+		return;
+	}
+
+	while (std::getline(data, line))
+	{
+		std::string textureName;
+		glm::vec4 uv;
+
+		auto element = 0;
+		std::string current;
+		for (auto i = 0u; i < line.size() && element < 5; i++)
+		{
+			if (line[i] == ';')
+			{
+				if (element == 0)
+				{
+					textureName = current;
+				}
+				else
+				{
+					uv[element - 1] = std::stof(current);
+				}
+				element++;
+				current = "";
+			}
+			else
+			{
+				current += line[i];
+			}
+		}
+
+		m_elements.emplace(textureName, uv);
+	}
+
+	LOG_VERBOSE << "Successfully imported spritesheet" << std::endl;
+
+	m_initialized = true;
 }
 
 void Spritesheet::generate()
 {
-	// load images
-	if (m_searchSubdirs)
+	for (const auto& p : std::experimental::filesystem::recursive_directory_iterator(m_directory))
 	{
-		for (const auto &p : std::experimental::filesystem::recursive_directory_iterator(m_directory))
-		{
-			addTexture(p);
-		}
+		addTexture(p);
 	}
-	else
-	{
-		for (const auto &p : std::experimental::filesystem::directory_iterator(m_directory))
-		{
-			addTexture(p);
-		}
-	}
-
-	if (m_textures.empty())
-	{
-		throw std::runtime_error("No textures found");
-	}
-
-	const auto it = std::find_if(m_textures.begin(), m_textures.end(), [](const TextureElement &t) {
-		return t.textureName == "default";
-	});
-
-	if (it == m_textures.end())
-	{
-		// Generate "missing texture" texture
-		std::vector<unsigned char> missingTextureData = {
-			255, 0, 255, 255, // magenta
-			0, 0, 0, 255,	 // black
-			0, 0, 0, 255,	 // black
-			255, 0, 255, 255  // magenta
-		};
-		const unsigned w = 2;
-		const auto h = w;
-
-		m_textures.emplace_back("default", glm::ivec2(w, h), missingTextureData);
-	}
-
-	// Pack textures together and fill vector with pixel data
 	packTextures();
+	cleanup();
 }
 
-glm::vec4 Spritesheet::getUv(const std::string &filename) const
+void Spritesheet::addTexture(const std::experimental::filesystem::directory_entry& p)
 {
-	const auto it = m_elements.find(filename);
+	auto pathStr = p.path().string();
+	std::replace(pathStr.begin(), pathStr.end(), '\\', '/');
+	auto extension = p.path().extension().string();
+	const auto strippedFileName = pathStr.substr(m_directory.size() + 1, pathStr.size() - m_directory.size() - 1 - extension.size());
+	std::transform(extension.begin(), extension.end(), extension.begin(), tolower);
 
-	if (it == m_elements.end())
+	// Check if directory entry is a valid image
+	if (!is_directory(p.path())
+		&& ((m_imageTypeFlags & PNG && extension == ".png")
+			|| (m_imageTypeFlags & JPEG && (extension == ".jpg" || extension == ".jpeg"))
+			|| (m_imageTypeFlags & BMP && extension == ".bmp")))
 	{
-		throw std::runtime_error("Could not find \"" + filename + "\" in spritesheet");
-	}
+		LOG_VERBOSE << "Processing '" << strippedFileName << "'" << std::endl;
 
-	const auto uv = it->second;
-
-	return glm::vec4(uv.x, 1.0f - uv.y - uv.w, uv.z, uv.w);
-}
-
-void Spritesheet::addTexture(const std::experimental::filesystem::directory_entry &p)
-{
-	if (!std::experimental::filesystem::is_directory(p.path()) && p.path().string().substr(p.path().string().length() - 4, 4) == ".png")
-	{
-		DEBUG_PRINT("Loading \"" + p.path().string() + "\"");
-
-		// Load and decode png
-		std::vector<unsigned char> in;
-		std::vector<unsigned char> out;
-		unsigned w, h;
-
-		const auto err = lodepng::decode(out, w, h, p.path().string());
-		if (err != 0)
+		/*
+		 * Get image data, image data isn't kept in memory because
+		 * if you have a lot of large textures, you'll end up using
+		 * a lot of memory fast
+		 */
+		int width, height, channels;
+		const auto data = stbi_load(pathStr.c_str(), &width, &height, &channels, 0);
+		if (data == nullptr)
 		{
-			throw std::runtime_error("Error occured during LodePNG decode: " + std::string(lodepng_error_text(err)));
+			LOG_WARN << "Failed to load image " << strippedFileName << std::endl;
+			return;
+		}
+		stbi_image_free(data);
+
+		// Check if a texture with the same name is already processed
+		const auto textureData = TextureData(pathStr, strippedFileName, glm::ivec2(width, height), channels);
+		const auto it = std::find(m_unprocessedTextures.begin(), m_unprocessedTextures.end(), textureData);
+		if (it != m_unprocessedTextures.end())
+		{
+			// Note: You could avoid this by not stripping the extension
+			LOG_WARN << "'" << strippedFileName << "' already exists. Skipping " << extension << " version" << std::endl;
+			return;
 		}
 
-		std::string textureName;
-
-		const auto cutoff = m_useExtensions ? 0 : p.path().extension().string().size();
-
-		const auto filename = p.path().filename().string().substr(0, p.path().filename().string().size() - cutoff);
-		const auto filepath = p.path().string().substr(0, p.path().string().size() - cutoff);
-		const auto directory = m_directory + "\\";
-
-		switch (m_spritesheetTextureNameStorage)
-		{
-		case SpritesheetTextureNameStorageEnum::FULL_PATH:
-			textureName = filepath;
-			break;
-		case SpritesheetTextureNameStorageEnum::PARTIAL_PATH:
-			textureName = filepath.substr(directory.size(), filepath.size() - directory.size());
-			break;
-		case SpritesheetTextureNameStorageEnum::FILENAME:
-			textureName = filename;
-			break;
-		}
-
-		m_textures.emplace_back(textureName, glm::ivec2(w, h), out);
+		m_unprocessedTextures.push_back(textureData);
 	}
 }
 
 void Spritesheet::packTextures()
 {
-	// Sort from longest sides to shortest sides (image name is secondary)
-	std::sort(m_textures.begin(), m_textures.end());
+	if (m_unprocessedTextures.empty()) return;
+
+	// Sort from longest sides to shortest sides
+	std::sort(m_unprocessedTextures.begin(), m_unprocessedTextures.end());
 
 	m_root = std::make_unique<Node>();
-	m_spritesheetResolution = m_textures[0].resolution; // set to image with largest side (which is first)
-	m_root->rectangle = glm::ivec4(0, 0, m_spritesheetResolution);
+	m_spritesheetDimensions = m_unprocessedTextures[0].dimensions;
+	m_root->rectangle = glm::ivec4(0, 0, m_spritesheetDimensions);
 
-	// Pack textures into sheet
-	for (auto &t : m_textures)
+	for (auto& t : m_unprocessedTextures)
 	{
-		DEBUG_PRINT("Packing \"" + t.textureName + "\"" + " <" + std::to_string(t.resolution.x) + ", " + std::to_string(t.resolution.y) + ">");
+		LOG_VERBOSE << "Packing '" << t.textureName << "' (" << t.dimensions.x << ", " << t.dimensions.y << ")" << std::endl;
 
 		const auto texNode = m_root->insert(t);
 		if (texNode != nullptr)
 		{
 			t.position = glm::ivec2(texNode->rectangle.x, texNode->rectangle.y);
-			texNode->texture = &t;
+			texNode->textureData = &t;
 		}
 		else
 		{
 			/*
 			 * Growing code adapted from https://codeincomplete.com/posts/bin-packing/
 			 */
-			const auto canGrowDown = t.resolution.x <= m_spritesheetResolution.x;
-			const auto canGrowRight = t.resolution.y <= m_spritesheetResolution.y;
+			const auto canGrowDown = t.dimensions.x <= m_spritesheetDimensions.x;
+			const auto canGrowRight = t.dimensions.y <= m_spritesheetDimensions.y;
 
-			const auto shouldGrowRight = canGrowRight && (m_spritesheetResolution.y >= m_spritesheetResolution.x + t.resolution.x);
-			const auto shouldGrowDown = canGrowDown && (m_spritesheetResolution.x >= m_spritesheetResolution.y + t.resolution.y);
+			const auto shouldGrowRight = canGrowRight && (m_spritesheetDimensions.y >= m_spritesheetDimensions.x + t.dimensions.x);
+			const auto shouldGrowDown = canGrowDown && (m_spritesheetDimensions.x >= m_spritesheetDimensions.y + t.dimensions.y);
 
 			auto grewDown = false;
 
 			// Figure out which way to grow
 			if (shouldGrowDown)
 			{
-				m_spritesheetResolution.y += t.resolution.y;
+				m_spritesheetDimensions.y += t.dimensions.y;
 				grewDown = true;
 			}
 			else if (shouldGrowRight)
 			{
-				m_spritesheetResolution.x += t.resolution.x;
+				m_spritesheetDimensions.x += t.dimensions.x;
 			}
 			else if (canGrowDown)
 			{
-				m_spritesheetResolution.y += t.resolution.y;
+				m_spritesheetDimensions.y += t.dimensions.y;
 				grewDown = true;
 			}
 			else if (canGrowRight)
 			{
-				m_spritesheetResolution.x += t.resolution.x;
+				m_spritesheetDimensions.x += t.dimensions.x;
 			}
 			else
 			{
@@ -344,7 +326,7 @@ void Spritesheet::packTextures()
 			}
 
 			auto newRoot = std::make_unique<Node>();
-			newRoot->rectangle = glm::ivec4(0, 0, m_spritesheetResolution);
+			newRoot->rectangle = glm::ivec4(0, 0, m_spritesheetDimensions);
 
 			newRoot->children[0] = std::move(m_root); // make m_root one of newRoot's children
 
@@ -354,11 +336,11 @@ void Spritesheet::packTextures()
 			// Modify rectanges so that they're correct
 			if (grewDown)
 			{
-				newRoot->children[1]->rectangle = glm::ivec4(0, newRoot->children[0]->rectangle.w, newRoot->children[0]->rectangle.z, t.resolution.y);
+				newRoot->children[1]->rectangle = glm::ivec4(0, newRoot->children[0]->rectangle.w, newRoot->children[0]->rectangle.z, t.dimensions.y);
 			}
 			else
 			{
-				newRoot->children[1]->rectangle = glm::ivec4(newRoot->children[0]->rectangle.z, 0, t.resolution.x, newRoot->children[0]->rectangle.w);
+				newRoot->children[1]->rectangle = glm::ivec4(newRoot->children[0]->rectangle.z, 0, t.dimensions.x, newRoot->children[0]->rectangle.w);
 			}
 
 			m_root = std::move(newRoot); // make newRoot m_root
@@ -368,67 +350,56 @@ void Spritesheet::packTextures()
 			if (node != nullptr)
 			{
 				t.position = glm::ivec2(node->rectangle.x, node->rectangle.y);
-				node->texture = &t;
+				node->textureData = &t;
 			}
 			else
 			{
-				throw std::runtime_error("Could not place image in spritesheet (this shouldn't happen");
+				LOG_WARN << "Could not place image in spritesheet (this shouldn't happen)";
+				return;
 			}
 		}
 	}
 
-	// Turn it into an image
-	const auto w = m_spritesheetResolution.x;
-	const auto h = m_spritesheetResolution.y;
+	const auto w = m_spritesheetDimensions.x;
+	const auto h = m_spritesheetDimensions.y;
+	m_pixels.resize(w * h * 4); // Each pixel is 4 bytes (rgba)
 
-	m_pixels.resize(w * h * 4); // each pixels is 4 bytes (rgba)
-
-	for (auto &t : m_textures)
+	for (auto& t : m_unprocessedTextures)
 	{
-		DEBUG_PRINT("Adding \"" + t.textureName + "\" to spritesheet");
+		LOG_VERBOSE << "Adding '" << t.textureName << "' to spritesheet" << std::endl;
 
-		auto col = 0; // x * 4
-		auto row = 0; // y
+		auto pixelCol = 0;
+		auto pixelRow = 0;
 
-		for (unsigned i = 0; i < t.pixels.size(); i++)
+		const auto data = stbi_load(t.path.c_str(), &t.dimensions.x, &t.dimensions.y, &t.channels, 4);
+
+		if (data != nullptr)
 		{
-			// texture position to pixel index
-			const auto pixelIndex = (t.position.x * 4 + col) + (t.position.y + row) * (w * 4);
-
-			m_pixels[pixelIndex] = t.pixels[i];
-
-			col++;
-
-			if (col == t.resolution.x * 4)
+			for (auto i = 0; i < t.dimensions.x * t.dimensions.y * 4; i++)
 			{
-				col = 0;
-				row++;
+				const auto pixelIndex = (t.position.x * 4 + pixelCol) + (t.position.y + pixelRow) * (w * 4);
+
+				m_pixels[pixelIndex] = data[i];
+
+				pixelCol++;
+
+				if (pixelCol == t.dimensions.x * 4)
+				{
+					pixelCol = 0;
+					pixelRow++;
+				}
 			}
 		}
 
-		// Emplace with normalized position and width
-		m_elements.emplace(t.textureName, glm::vec4(t.position, t.resolution) / glm::vec4(w, h, w, h));
+		stbi_image_free(data);
+		m_elements.emplace(t.textureName, glm::vec4(t.position, t.dimensions) / glm::vec4(w, h, w, h));
 	}
 }
 
-void Spritesheet::exportSpritesheet(const std::string &filename) const
+void Spritesheet::cleanup()
 {
-	// It is recommended that you change this
-	DEBUG_PRINT("Creating spritesheet");
-	const auto err = lodepng::encode(filename, m_pixels, m_spritesheetResolution.x, m_spritesheetResolution.y);
-	if (err != 0)
-	{
-		throw std::runtime_error("Error occured during LodePNG encode: " + std::string(lodepng_error_text(err)));
-	}
-}
+	std::vector<TextureData> temp;
+	std::swap(temp, m_unprocessedTextures);
 
-bool operator<(const TextureElement &a, const TextureElement &b)
-{
-	const auto aSize = std::max(a.resolution.x, a.resolution.y);
-	const auto bSize = std::max(b.resolution.x, b.resolution.y);
-	if (aSize == bSize)
-	{
-		return a.textureName < b.textureName;
-	}
-	return aSize > bSize;
+	m_root = nullptr;
 }

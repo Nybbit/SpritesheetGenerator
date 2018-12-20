@@ -2,35 +2,31 @@
 
 **What is this?**
 
-This code searches for PNGs in a specified directory and packs them together into a single spritesheet. It also stores the data so you can easily retrieve the UV for a specific texture.
-
-This is meant to be modified for your own usage. (For example, generating an OpenGL texture for the spritesheet)
+This code generates a spritesheet from textures in a specified directory. It also has simple serialization so you can import and already generated spritesheet. Feel free to use this in *any* of your projects and modify the code, attribution would be nice but it's not required :simple_smile:
 
 ## Example
 
 **Code**
 ```cpp
-// Make the spritesheet
-Spritesheet mySheet = Spritesheet(
-	"bin/textures",                               // Directory to search [Optional]
-	 true,                                        // Search sub directories? [Optional]
-	 SpritesheetTextureNameStorageEnum::FILENAME, // How texture names are stored [Optional]
-	 false                                        // Use file extensions? [Optional]
-	 );
+/*
+ * Generate a spritesheet from textures with the
+ * extensions PNG, JPEG, and BMP in the
+ * "texture" directory
+ */
+auto sheet = Spritesheet("bin/textures", PNG | JPEG | BMP);
+sheet.exportSpritesheet("spritesheetData"); // Export the spritesheet to folder 'spritesheetData' for easy import later
+sheet.getUv("subfolder/a"); // Get texture 'bin/textures/subfolder/a.png'
 
-// Generate the spritesheet and check for errors
-try
-{
-	mySheet.generate();
-	mySheet.exportSpritesheet("spritesheet.png");
-}
-catch (const std::runtime_error& err)
-{
-	std::cout << "[ERROR] " << err.what() << std::endl;
-}
-
-// Get UV by texture name (x, y, width, height)
-glm::vec4 uv = mySheet.getUv("my-texture-name");
+// Create an ungenerated spritesheet for import
+auto sheet2 = Spritesheet();
+/*
+ * Import spritesheet from folder 'spritesheetData'
+ * Note: you don't need the original images if you're importing,
+ * you only need image.png and data.dat (which are generated
+ * by exportSpritesheet())
+ */
+sheet2.importSpritesheet("spritesheetData");
+sheet.getUv("subfolder/a"); // Get texture
 ```
 
 **Spritesheet output**
@@ -40,10 +36,9 @@ glm::vec4 uv = mySheet.getUv("my-texture-name");
 ## Dependencies
 
 **Required**
-- [lodePNG](http://lodev.org/lodepng/) (for PNG decoding and encoding)
-
-**Optional**
-- GLM (for `vec2`, `ivec2`, `vec4`, `ivec4`, etc. Easily replacable)
+- [stb_image.h](https://github.com/nothings/stb/blob/master/stb_image.h) (for image decoding)
+- [stb_image_write.h](https://github.com/nothings/stb/blob/master/stb_image_write.h) (for image encoding)
+- [glm](https://glm.g-truc.net) (for `ivec2` and `vec4` - easily replacable)
 
 ## Building
 

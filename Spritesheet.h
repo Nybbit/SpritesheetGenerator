@@ -1,148 +1,116 @@
 #pragma once
-#ifndef NYBBIT_SPRITESHEET_H
-#define NYBBIT_SPRITESHEET_H
-
-#include <string>
-#include <vector>
-#include <map>
-#include <experimental/filesystem>
-
 #include <glm/glm.hpp>
 
-struct TextureElement
+#include <string>
+#include <experimental/filesystem>
+#include <unordered_map>
+#include <array>
+
+enum ImageTypeFlags
 {
-	/**
-	 * \brief Holds path and resolution of a texture for packing
-	 * \param texture_name Name of texture
-	 * \param resolution Resolution of image
-	 * \param pixels Raw pixel data of texture
-	 */
-	explicit TextureElement(std::string texture_name, glm::ivec2 resolution, std::vector<unsigned char> pixels);
-
-	friend bool operator<(const TextureElement& a, const TextureElement& b);
-
-	std::string textureName;
-	glm::ivec2 resolution;
-	std::vector<unsigned char> pixels;
-
-	// Set manually
-	glm::ivec2 position;
+	PNG = 0x01,
+	JPEG = 0x02,
+	BMP = 0x04
 };
 
-/*
- * Packing code adapted from http://blackpawn.com/texts/lightmaps/default.html
- */
+struct TextureData
+{
+	TextureData(const std::string& path, const std::string& texture_name, const glm::ivec2 dimensions, const int channels)
+		: path(path), textureName(texture_name), dimensions(dimensions), channels(channels)
+	{}
+
+	std::string path;
+	std::string textureName;
+	glm::ivec2 dimensions;
+	glm::ivec2 position = glm::ivec2(-1);
+	int channels;
+
+	friend bool operator<(const TextureData& lhs, const TextureData& rhs)
+	{
+		const auto aSize = std::max(lhs.dimensions.x, lhs.dimensions.y);
+		const auto bSize = std::max(rhs.dimensions.x, rhs.dimensions.y);
+		return aSize > bSize;
+	}
+
+	friend bool operator==(const TextureData& lhs, const TextureData& rhs)
+	{
+		return std::tie(lhs.textureName, lhs.dimensions, lhs.channels) == std::tie(
+			rhs.textureName, rhs.dimensions, rhs.channels);
+	}
+};
+
 struct Node
 {
-	std::unique_ptr<Node> children[2] { nullptr, nullptr };
-	glm::ivec4 rectangle;
-	TextureElement* texture = nullptr;
-
 	enum FitTypeEnum
 	{
 		DOES_NOT_FIT, PERFECT_FIT, EXTRA_SPACE
 	};
 
-	FitTypeEnum fits(glm::ivec2 rect_dims) const;
+	FitTypeEnum fits(glm::ivec2 dimensions) const;
+	Node* insert(TextureData& data);
 
-	Node* insert(TextureElement& tex);
-};
-
-/**
- * \brief How texture names are stored and to be referred to
- */
-enum class SpritesheetTextureNameStorageEnum
-{
-	/*
-	 * The full path relative to the exe
-	 *
-	 * Example:
-	 * "bin\textures\particles\explosion\splode_frame_0001.png"
-	 */
-	FULL_PATH,
-
-	/*
-	 * The full path not including the spritesheet directory
-	 *
-	 * Example (assuming the directory is "bin\textures"):
-	 * "particles\explosion\splode_frame_0001.png"
-	 */
-	PARTIAL_PATH,
-
-	/*
-	 * Just the file name of the image
-	 *
-	 * Example:
-	 * "splode_frame_0001.png"
-	 */
-	FILENAME
+	std::array<std::unique_ptr<Node>, 2> children = { nullptr, nullptr };
+	glm::ivec4 rectangle = glm::ivec4(0);
+	TextureData* textureData = nullptr;
 };
 
 class Spritesheet
 {
 public:
 	/**
-	 * \brief Constructors spritesheet set to current directory
+	 * \brief Create a spritesheet for importing
 	 */
-	explicit Spritesheet(bool search_sub_directories = false,
-		SpritesheetTextureNameStorageEnum spritesheet_texture_name_storage =
-		SpritesheetTextureNameStorageEnum::FULL_PATH, bool use_file_extensions = true);
+	explicit Spritesheet();
+	/**
+	 * \brief Generate a spritesheet
+	 * \param directory Directory to search for textures in
+	 * \param image_type_flags Types of images to search for, bitflag
+	 */
+	explicit Spritesheet(const std::string& directory, unsigned image_type_flags = PNG);
 
 	/**
-	 * \brief Constructs spritesheet with specified directory
-	 * \param directory Directory to search for PNGs
-	 * \param search_sub_directories Whether to search subdirectories for PNGs
-	 * \param spritesheet_texture_name_storage How texture naems are stored
-	 * \param use_file_extensions Whether extensions will be a part of texture names
+	 * \brief Get the uv for a texture in the spritesheet
+	 * \param texture_name Name of texture you want the UV of
+	 * \return UV of texture
 	 */
-	explicit Spritesheet(std::string directory, bool search_sub_directories,
-		SpritesheetTextureNameStorageEnum spritesheet_texture_name_storage =
-		SpritesheetTextureNameStorageEnum::FULL_PATH, bool use_file_extensions = true);
+	glm::vec4 getUv(const std::string& texture_name);
 
 	/**
-	 * \brief Generates a spritesheet from all PNGs in directory
+	 * \brief Export spritesheet and spritesheet data for quick importing
+	 * \param directory Directory to export spritesheet to
 	 */
-	void generate();
-
+	void exportSpritesheet(const std::string& directory);
 	/**
-	 * \brief Get the UV of a texture by filename in the format (x, 1.0f - y, width, height) normalized [0-1]
-	 * \param filename Name of texture to get
-	 * \return uv
+	 * \brief Import a premade spritesheet
+	 * \param directory Directory to import spritesheet from
 	 */
-	glm::vec4 getUv(const std::string& filename) const;
-
-	/**
-	 * \brief Exports the spritesheet's image data to a file in the PNG format
-	 */
-	void exportSpritesheet(const std::string& filename) const;
+	void importSpritesheet(const std::string& directory);
 private:
 	/**
-	 * \brief Adds a png to the spritesheet
-	 * \param p Directory entry of png to add to spritesheet
+	 * \brief Generate the spritesheet
+	 */
+	void generate();
+	/**
+	 * \brief Adds texture data to spritesheet
+	 * \param p Path to texture
 	 */
 	void addTexture(const std::experimental::filesystem::directory_entry& p);
-
 	/**
-	 * \brief Packs textures together and creates spritesheet
+	 * \brief Arranges textures into a square
 	 */
 	void packTextures();
+	/**
+	 * \brief Cleans up anything that isn't required for use after generation
+	 */
+	void cleanup();
 
 	std::string m_directory;
+	unsigned m_imageTypeFlags;
+	std::vector<TextureData> m_unprocessedTextures;
+	std::unique_ptr<Node> m_root = nullptr;
 
-	bool m_searchSubdirs;
-
-	SpritesheetTextureNameStorageEnum m_spritesheetTextureNameStorage;
-
-	bool m_useExtensions;
-
-	std::vector<TextureElement> m_textures;
-
-	std::map<std::string, glm::vec4> m_elements;
-
-	std::vector<unsigned char> m_pixels;
-
-	glm::ivec2 m_spritesheetResolution;
-
-	std::unique_ptr<Node> m_root;
+	bool m_initialized = false;
+	glm::ivec2 m_spritesheetDimensions = glm::ivec2(0);
+	std::vector<uint8_t> m_pixels;
+	std::unordered_map<std::string, glm::vec4> m_elements;
 };
-#endif
